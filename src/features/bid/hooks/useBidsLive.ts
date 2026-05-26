@@ -19,11 +19,11 @@ interface BidUpdate {
 /**
  * Carga las pujas del usuario + se suscribe a las actualizaciones por WebSocket.
  *
- * El backend expone un WebSocket "raw" (no STOMP) en
- *   {VITE_WS_URL_BIDS}/bid/create  o equivalente.
- *
- * Para mantenerlo configurable se reutiliza `env.wsUrl`. Si la URL termina
- * en `/ws` se intercambia por `/api/bid/create` (formato del Flutter actual).
+ * Notas:
+ *  - El backend identifica al usuario por el token Firebase del header,
+ *    por eso `getMine()` llama a `/bids/user/me` sin pasar id explícito.
+ *  - El WebSocket de pujas en vivo es opcional; si el backend no lo expone,
+ *    se ignora silenciosamente y la app sigue funcionando con recarga manual.
  */
 export function useBidsLive() {
   const [items, setItems] = useState<BidWithProduct[]>([])
@@ -32,7 +32,6 @@ export function useBidsLive() {
   const wsRef = useRef<WebSocket | null>(null)
 
   const buildBidWsUrl = () => {
-    // Tomamos apiUrl y lo convertimos a ws(s)://.../api/bid/create
     const apiUrl = env.apiUrl
     try {
       const u = new URL(apiUrl)
@@ -76,23 +75,30 @@ export function useBidsLive() {
 
   useEffect(() => {
     void loadInitial()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // WebSocket de pujas en vivo — opcional, no bloquea la app si falla
+  useEffect(() => {
     const url = buildBidWsUrl()
     if (!url) return
 
     let cancelled = false
+    let active = true
 
     const connect = async () => {
       const token = await auth.currentUser?.getIdToken()
       if (cancelled) return
 
-      // El backend Flutter no enviaba token por header (limitación de WebSocket),
-      // pero lo agregamos como query param por si el server lo lee.
       const finalUrl = token ? `${url}?token=${encodeURIComponent(token)}` : url
 
       try {
         const ws = new WebSocket(finalUrl)
         wsRef.current = ws
+
+        ws.onopen = () => {
+          if (active) console.info('[useBidsLive] WS de pujas conectado')
+        }
 
         ws.onmessage = (ev) => {
           try {
@@ -101,7 +107,9 @@ export function useBidsLive() {
 
             setItems((prev) => {
               const next = [...prev]
-              const idx = next.findIndex((x) => x.product.id === data.product.id)
+              const idx = next.findIndex(
+                (x) => x.product.id === data.product.id,
+              )
               const merged: BidWithProduct = {
                 bid: data.bid,
                 product: data.product,
@@ -116,15 +124,26 @@ export function useBidsLive() {
               else next.push(merged)
               return next
             })
-          } catch (parseErr) {
-            console.warn('[useBidsLive] mensaje WS no parseable', parseErr)
+          } catch {
+            /* mensaje inválido — ignorar */
           }
         }
 
-        ws.onerror = (e) => console.warn('[useBidsLive] WS error', e)
-        ws.onclose = () => console.debug('[useBidsLive] WS cerrado')
-      } catch (err) {
-        console.warn('[useBidsLive] no se pudo abrir WS', err)
+        // Silenciar error/close cuando el endpoint no existe en el backend.
+        // Usamos console.info en vez de console.error para no ensuciar la
+        // consola con un fallo conocido y no bloqueante.
+        ws.onerror = () => {
+          if (active) {
+            console.info(
+              '[useBidsLive] WS de pujas no disponible — solo recarga manual',
+            )
+          }
+        }
+        ws.onclose = () => {
+          /* silencioso */
+        }
+      } catch {
+        // ignore: si el endpoint no existe, simplemente no hay live updates
       }
     }
 
@@ -132,6 +151,7 @@ export function useBidsLive() {
 
     return () => {
       cancelled = true
+      active = false
       wsRef.current?.close()
       wsRef.current = null
     }

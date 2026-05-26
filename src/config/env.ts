@@ -1,16 +1,16 @@
 /**
  * Variables de entorno tipadas y validadas.
  * Toda lectura de `import.meta.env.*` debe pasar por aquí.
+ *
+ * En dev y en producción la app habla DIRECTO con el backend
+ * (sin proxy). El backend debe tener CORS habilitado para los orígenes
+ * de la app (localhost en dev, dominio de Vercel en prod).
  */
 
 interface AppEnv {
-  /** URL absoluta del backend (usada para WS y para producción) */
+  /** URL absoluta del backend, sin /api al final */
   apiUrl: string
-  /**
-   * Base que usa el axios client.
-   * - En dev: '/api' (el proxy de Vite lo reenvía al backend → evita CORS)
-   * - En prod: `${apiUrl}/api`
-   */
+  /** Base que usa el axios client: `${apiUrl}/api` */
   apiBase: string
   wsUrl: string
   allowedEmailDomain: string
@@ -27,8 +27,6 @@ interface AppEnv {
 function requireEnv(key: string, fallback?: string): string {
   const value = import.meta.env[key] ?? fallback
   if (!value) {
-    // No lanzamos en build para permitir despliegues estáticos parciales,
-    // pero sí avisamos en consola para detectar variables faltantes.
     console.warn(`[env] Variable ${key} no definida.`)
     return ''
   }
@@ -42,7 +40,7 @@ const apiUrl = requireEnv(
 
 export const env: AppEnv = {
   apiUrl,
-  apiBase: import.meta.env.DEV ? '/api' : `${apiUrl}/api`,
+  apiBase: `${apiUrl}/api`,
   wsUrl: requireEnv('VITE_WS_URL', 'wss://codefact.udea.edu.co/unisubastas/ws-chat'),
   allowedEmailDomain: requireEnv('VITE_ALLOWED_EMAIL_DOMAIN', 'udea.edu.co'),
   firebase: {

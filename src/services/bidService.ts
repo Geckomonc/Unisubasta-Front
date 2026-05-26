@@ -10,6 +10,11 @@ export const bidService = {
     return data
   },
 
+  /**
+   * Pujas hechas por el usuario autenticado.
+   * El backend identifica al usuario por el token Firebase del header,
+   * por eso el path lleva la palabra mágica `me`.
+   */
   async getMine(): Promise<Bid[]> {
     const { data } = await api.get<Bid[]>('/bids/user/me')
     return data
