@@ -129,9 +129,6 @@ export function useBidsLive() {
           }
         }
 
-        // Silenciar error/close cuando el endpoint no existe en el backend.
-        // Usamos console.info en vez de console.error para no ensuciar la
-        // consola con un fallo conocido y no bloqueante.
         ws.onerror = () => {
           if (active) {
             console.info(
